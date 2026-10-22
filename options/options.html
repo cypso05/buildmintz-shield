@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <meta name="description" content="Configure privacy-first protection and trusted website exceptions for BuildMintZ Shield.">
+  <title>Settings | BuildMintZ Shield</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="header-icon" aria-hidden="true">B</div>
+      <div>
+        <h1>BuildMintZ Shield</h1>
+        <p>Privacy-first protection settings</p>
+      </div>
+    </header>
+
+    <main>
+      <section class="card" aria-labelledby="protectionHeading">
+        <h2 id="protectionHeading">Protection</h2>
+        <p class="card-description">
+          Customize how BuildMintZ Shield protects your browsing experience.
+        </p>
+
+        <div class="setting-row">
+          <div class="setting-copy">
+            <strong id="cosmeticLabel">Cosmetic ad hiding</strong>
+            <p id="cosmeticDescription">
+              Hide common ad containers on web pages. This is best-effort
+              protection and may miss site-specific ads.
+            </p>
+          </div>
+
+          <label class="switch">
+            <input
+              type="checkbox"
+              id="cosmetic"
+              aria-labelledby="cosmeticLabel"
+              aria-describedby="cosmeticDescription"
+            >
+            <span class="switch-track" aria-hidden="true"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-copy">
+            <strong>Local request filtering</strong>
+            <p>
+              Control network filtering from the extension popup.
+              Built-in rules help block known ad, tracking, and security threats.
+            </p>
+          </div>
+          <span class="field-hint">Managed in popup</span>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="exceptionsHeading">
+        <h2 id="exceptionsHeading">Website exceptions</h2>
+        <p class="card-description">
+          Trusted websites added here are excluded from BuildMintZ Shield's
+          network filtering and cosmetic hiding. Only add websites you trust.
+        </p>
+
+        <form id="addForm" class="actions" novalidate>
+          <div class="field" style="flex: 1 1 240px;">
+            <label for="host">Website domain</label>
+            <input
+              type="text"
+              id="host"
+              name="host"
+              placeholder="example.com"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              inputmode="url"
+              aria-describedby="hostHint"
+              required
+            >
+            <span id="hostHint" class="field-hint">
+              Enter a domain such as example.com, without a URL path.
+            </span>
+          </div>
+
+          <button class="button" type="submit">Add website</button>
+        </form>
+
+        <div
+          id="sites"
+          class="allowlist"
+          aria-label="Website exceptions"
+          aria-live="polite"
+        ></div>
+      </section>
+
+      <section class="card" aria-labelledby="privacyHeading">
+        <h2 id="privacyHeading">Privacy by design</h2>
+        <p class="card-description">
+          Protection is designed to run locally in your browser.
+        </p>
+
+        <ul class="plain">
+          <li>Request filtering is handled by your browser.</li>
+          <li>No account, analytics endpoint, or BuildMintZ server is required.</li>
+          <li>Filtering rules are bundled with this extension release.</li>
+          <li>
+            BuildMintZ Shield is not a full antivirus and cannot guarantee
+            detection of every malicious website, tracker, or advertisement.
+          </li>
+        </ul>
+      </section>
+
+      <section class="card" aria-labelledby="dataHeading">
+        <h2 id="dataHeading">Settings and backups</h2>
+        <p class="card-description">
+          Export your website exceptions for backup, or import a previous backup.
+        </p>
+
+        <div class="data-actions">
+          <div class="data-group">
+            <h3>Export settings</h3>
+            <p>Save your current settings and website exceptions as a JSON file.</p>
+            <button class="button secondary" id="export" type="button">
+              Export backup
+            </button>
+          </div>
+
+          <div class="data-group">
+            <h3>Import settings</h3>
+            <p>Restore website exceptions from a previously exported JSON file.</p>
+            <div class="field">
+              <label for="importFile">Backup file</label>
+              <input
+                type="file"
+                id="importFile"
+                name="importFile"
+                accept=".json,application/json"
+              >
+            </div>
+            <div class="actions">
+              <button class="button secondary" id="import" type="button">
+                Import backup
+              </button>
+            </div>
+          </div>
+
+          <div class="data-group">
+            <h3>Reset settings</h3>
+            <p>
+              Restore default protection preferences and remove saved website
+              exceptions.
+            </p>
+            <button class="button danger" id="clearAll" type="button">
+              Reset settings
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="diagnosticsHeading">
+        <h2 id="diagnosticsHeading">Ad-slip diagnostics</h2>
+        <p class="card-description">
+          What the extension observed when an ad was detected but could not be
+          skipped within 1.5 seconds. This is a raw local log, not an advertiser
+          report. YouTube does not expose advertiser names to the page, so this
+          list shows only the signals the content script could see — the page
+          URL, the ad badge text (often empty or "Ad"), the "Why this ad" link
+          when present, and whether a skip button existed.
+        </p>
+
+        <div class="actions">
+          <button class="button secondary" id="refreshSlipped" type="button">
+            Refresh
+          </button>
+          <button class="button danger" id="clearSlipped" type="button">
+            Clear log
+          </button>
+        </div>
+
+        <pre id="slippedLog" class="notice" aria-live="polite" style="max-height:360px;overflow:auto;white-space:pre-wrap;"></pre>
+      </section>
+    </main>
+
+    <p id="message" class="notice" role="status" aria-live="polite"></p>
+
+    <footer class="footer">
+      BuildMintZ Shield · Early release
+    </footer>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

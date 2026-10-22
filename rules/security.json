@@ -1,0 +1,24 @@
+[
+  {"id":301,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||onclickads.net^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":302,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||popads.net^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":303,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||popcash.net^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":304,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||propellerads.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":305,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||adsterra.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":306,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||hilltopads.net^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":307,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||clickadu.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":308,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||exoclick.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":309,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||juicyads.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":310,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||trafficjunky.net^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":311,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||trafficjunky.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":312,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||adf.ly^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":313,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||shorte.st^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":314,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||linkvertise.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":315,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||linkvertise.net^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":316,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||ad-maven.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":317,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||adcash.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+
+  {"id":330,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||coinhive.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":331,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||coin-hive.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":332,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||crypto-loot.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}},
+  {"id":333,"priority":100,"action":{"type":"block"},"condition":{"urlFilter":"||webminepool.com^","resourceTypes":["main_frame","sub_frame","script","xmlhttprequest","other"]}}
+]

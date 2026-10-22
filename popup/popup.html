@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="popup.css">
+  <title>BuildMintZ Shield</title>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="mark" aria-hidden="true">B</div>
+      <div>
+        <h1>BuildMintZ Shield</h1>
+        <p id="statusSub">Local browser protection</p>
+      </div>
+    </header>
+
+    <section class="status" aria-live="polite" aria-atomic="true">
+      <span class="dot" id="dot" aria-hidden="true"></span>
+      <div class="status-copy">
+        <strong id="statusText">Checking protection…</strong>
+        <small id="statusDetail">No account. No BuildMintZ server.</small>
+      </div>
+      <label class="switch" title="Toggle protection">
+        <input type="checkbox" id="enabled" aria-label="Enable protection" disabled>
+        <span aria-hidden="true"></span>
+      </label>
+    </section>
+
+    <section class="stats-grid" aria-label="Protection statistics">
+      <div class="stat-box">
+        <strong id="stat-page">0</strong>
+        <span>Hidden<br>(This Page)</span>
+      </div>
+      <div class="stat-box highlight">
+        <strong id="stat-today">0</strong>
+        <span>Hidden<br>(Today)</span>
+      </div>
+      <div class="stat-box">
+        <strong id="stat-dom">0</strong>
+        <span>Elements<br>Hidden</span>
+      </div>
+    </section>
+
+    <p class="site" id="siteLine">
+      Site: <span id="siteHost">Checking…</span>
+    </p>
+
+    <button id="allowSite" class="secondary" type="button" disabled>
+      Checking site…
+    </button>
+
+    <button id="options" class="link" type="button">
+      Protection settings
+    </button>
+
+    <footer>BuildMintZ Shield · early release</footer>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>
