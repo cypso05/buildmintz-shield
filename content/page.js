@@ -1,6 +1,5 @@
 // content/page.js — YouTube ad skipper (main world)
-// Fully hardened: handles reloads, SPA transitions, "Sponsored" layouts, 
-// diagnostic logging, and prevents black screens on long videos.
+// Highly resilient, dynamic, and avoids black screens / fast-forward glitches.
 (() => {
   if (!/(^|\.)youtube\.com$/.test(location.hostname)) return;
 
@@ -22,11 +21,7 @@
     '.ytp-visit-advertiser-link'    
   ].join(',');
 
-  const STATE = {
-    saved: null, 
-    lastAd: false,
-    reportTimer: null 
-  };
+  let adReported = false;
 
   function isAdActive() {
     const player = document.querySelector('.html5-video-player');
@@ -39,7 +34,7 @@
 
     if (document.querySelector('.ytp-ad-duration-remaining')) return true;
 
-    // Catch the "Sponsored" layout
+    // Catch the "Sponsored" text layout dynamically
     if (player && /(Sponsored|Ad · \d+ of \d+)/i.test(player.textContent)) {
       return true;
     }
@@ -47,53 +42,41 @@
     return false;
   }
 
-  function skipAd(video) {
-    const skip = document.querySelector(AD_SKIP_SELECTORS);
-    if (skip && skip.offsetParent !== null) {
-      try { skip.click(); } catch {}
-    }
-
-    if (video && Number.isFinite(video.duration) && video.duration > 0) {
-      if (!STATE.saved) {
-        STATE.saved = { playbackRate: video.playbackRate, muted: video.muted };
-      }
-      try { video.currentTime = Math.max(video.duration - 0.1, video.currentTime); } catch {}
-    }
-
-    if (video) {
-      if (!STATE.saved) {
-        STATE.saved = { playbackRate: video.playbackRate, muted: video.muted };
-      }
-      try { video.muted = true; } catch {}
-      try { video.playbackRate = 16; } catch {}
-    }
-  }
-
-  function restore(video) {
-    if (!STATE.saved) return;
-    
-    // INSTANT RESTORE: This prevents the black screen chunks on long videos.
-    // It restores speed/volume immediately without waiting 500ms.
-    try { video.playbackRate = STATE.saved.playbackRate; } catch {}
-    try { video.muted = STATE.saved.muted; } catch {}
-    STATE.saved = null;
-  }
-
   function tick() {
     const video = document.querySelector('video.html5-main-video');
-    if (!video) { STATE.lastAd = false; return; }
+    if (!video) return;
 
     const ad = isAdActive();
 
     if (ad) {
-      STATE.lastAd = true;
-      skipAd(video);
+      // 1. FORCE normal speed and sound. 
+      // If YouTube glitched and left it at 16x, this instantly fixes it.
+      if (video.playbackRate !== 1) {
+        try { video.playbackRate = 1; } catch {}
+      }
+      if (video.muted) {
+        try { video.muted = false; } catch {}
+      }
 
-      // Diagnostic Logger: If the ad is still here after 1.5s, record it.
-      if (!STATE.reportTimer) {
-        STATE.reportTimer = setTimeout(() => {
-          STATE.reportTimer = null;
-          if (!isAdActive()) return;
+      // 2. Click Skip if visible
+      const skip = document.querySelector(AD_SKIP_SELECTORS);
+      if (skip && skip.offsetParent !== null) {
+        try { skip.click(); } catch {}
+      }
+
+      // 3. Jump to the end of the ad instantly.
+      // Using currentTime is much safer than 16x speed and prevents black screens.
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        if (video.currentTime < video.duration - 0.5) {
+          try { video.currentTime = video.duration; } catch {}
+        }
+      }
+
+      // 4. Diagnostic Logger
+      if (!adReported) {
+        adReported = true;
+        setTimeout(() => {
+          if (!isAdActive()) { adReported = false; return; }
           const badge = document.querySelector(AD_BADGE_SELECTORS);
           const whyLink = [...document.querySelectorAll('a')].find(a =>
             /why this ad|about this ad/i.test(a.textContent || ''));
@@ -106,16 +89,19 @@
               badgeText: badge ? (badge.textContent || '').trim().slice(0, 200) : '',
               whyAdHref: whyLink ? whyLink.href : '',
               skipButtonPresent: !!document.querySelector(AD_SKIP_SELECTORS),
-              videoDuration: video && Number.isFinite(video.duration) ? video.duration : null,
-              videoCurrentTime: video ? video.currentTime : null
+              videoDuration: video ? video.duration : null
             },
             ts: Date.now()
           }, '*');
+          adReported = false;
         }, 1500);
       }
-    } else if (STATE.lastAd) {
-      STATE.lastAd = false;
-      restore(video);
+
+    } else {
+      // 5. SAFETY NET: If the ad is gone, ensure the real video is at normal speed.
+      if (video.playbackRate !== 1) {
+        try { video.playbackRate = 1; } catch {}
+      }
     }
   }
 
@@ -126,22 +112,18 @@
     if (++fastTicks >= 24) clearInterval(fastTimer);
   }, 125);
 
-  // 2. Steady state poll for mid-rolls
+  // 2. Steady state poll for mid-rolls on long videos
   setInterval(tick, 250);
 
-  // 3. SPA Navigation Watcher
+  // 3. SPA Navigation Watcher (Catches when you click a new video without reloading)
   let lastHref = location.href;
   setInterval(() => {
     if (location.href === lastHref) return;
     lastHref = location.href;
     
-    STATE.saved = null;
-    STATE.lastAd = false;
-    if (STATE.reportTimer) {
-      clearTimeout(STATE.reportTimer);
-      STATE.reportTimer = null;
-    }
+    adReported = false;
 
+    // Re-arm the aggressive fast poll for the new video page
     let n = 0;
     const t = setInterval(() => {
       tick();
