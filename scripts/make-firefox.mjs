@@ -283,7 +283,11 @@ function createFirefoxManifest(sourceManifest) {
     gecko: {
       ...manifest.browser_specific_settings?.gecko,
       id: 'shield@buildmintz.example',
-      strict_min_version: '128.0'
+      strict_min_version: '128.0',
+      // NEW: Required by Mozilla to pass validation for no data collection
+      data_collection_permissions: {
+        required: ['none']
+      }
     }
   };
 
