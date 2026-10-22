@@ -271,16 +271,24 @@
     }
   });
 
-  // Relay ad-slip diagnostics from the MAIN-world page.js to the background.
-  // page.js posts { __bmz: 'adSlipped', url, signals, ts }; we forward it so
-  // the background can persist it in chrome.storage.local. Only the top frame
-  // receives the message, because page.js runs all_frames:false and YouTube's
-  // player lives in the top frame.
+  // 1. Listen for the secure handshake from page.js
+  let bmzSecretToken = null;
+  document.addEventListener('bmz-handshake', (event) => {
+    if (typeof event.detail === 'string') {
+      bmzSecretToken = event.detail;
+    }
+  });
+
+  // 2. Relay ad-slip diagnostics, strictly verifying the token
   try {
     window.addEventListener('message', (event) => {
       if (event.source !== window) return;
       const data = event.data;
+      
+      // Verify it's our message AND has the correct token
       if (!data || data.__bmz !== 'adSlipped') return;
+      if (!bmzSecretToken || data.token !== bmzSecretToken) return; 
+      
       if (window.top !== window) return;
       try {
         chrome.runtime.sendMessage({ type: 'recordSlippedAd', record: data })
