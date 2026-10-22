@@ -1,5 +1,5 @@
 // content/page.js — YouTube ad skipper (main world)
-// Highly resilient, dynamic, and avoids black screens / fast-forward glitches.
+// Highly resilient, dynamic, kills static image ads, saves CPU on background tabs.
 (() => {
   if (!/(^|\.)youtube\.com$/.test(location.hostname)) return;
 
@@ -7,7 +7,9 @@
     '.ytp-ad-skip-button',
     '.ytp-ad-skip-button-modern',
     '.ytp-skip-ad-button',
-    '.ytp-ad-skip-button-container button'
+    '.ytp-ad-skip-button-container button',
+    '.ytp-ad-overlay-close-button', // NEW: For static image ads
+    '.ytp-ad-survey-close-button'   // NEW: For survey ads
   ].join(',');
 
   const AD_BADGE_SELECTORS = [
@@ -21,7 +23,13 @@
     '.ytp-visit-advertiser-link'    
   ].join(',');
 
+  // Generate a random token to secure postMessage communication
+  const SECRET_TOKEN = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+  document.dispatchEvent(new CustomEvent('bmz-handshake', { detail: SECRET_TOKEN }));
+
   let adReported = false;
+  let isTabVisible = !document.hidden;
+  let steadyInterval = null;
 
   function isAdActive() {
     const player = document.querySelector('.html5-video-player');
@@ -44,35 +52,34 @@
 
   function tick() {
     const video = document.querySelector('video.html5-main-video');
-    if (!video) return;
-
     const ad = isAdActive();
 
     if (ad) {
       // 1. FORCE normal speed and sound. 
-      // If YouTube glitched and left it at 16x, this instantly fixes it.
-      if (video.playbackRate !== 1) {
+      if (video && video.playbackRate !== 1) {
         try { video.playbackRate = 1; } catch {}
       }
-      if (video.muted) {
+      if (video && video.muted) {
         try { video.muted = false; } catch {}
       }
 
-      // 2. Click Skip if visible
-      const skip = document.querySelector(AD_SKIP_SELECTORS);
-      if (skip && skip.offsetParent !== null) {
-        try { skip.click(); } catch {}
+      // 2. AGGRESSIVE CLICKING: Click ALL visible skip/close buttons instantly.
+      // This handles static image ads where we can't jump the video timeline.
+      const buttons = document.querySelectorAll(AD_SKIP_SELECTORS);
+      for (const btn of buttons) {
+        if (btn.offsetParent !== null && !btn.disabled) {
+          try { btn.click(); } catch {}
+        }
       }
 
-      // 3. Jump to the end of the ad instantly.
-      // Using currentTime is much safer than 16x speed and prevents black screens.
-      if (Number.isFinite(video.duration) && video.duration > 0) {
+      // 3. Jump to the end of the ad instantly (if it's a video)
+      if (video && Number.isFinite(video.duration) && video.duration > 0) {
         if (video.currentTime < video.duration - 0.5) {
           try { video.currentTime = video.duration; } catch {}
         }
       }
 
-      // 4. Diagnostic Logger
+      // 4. Diagnostic Logger (Secured)
       if (!adReported) {
         adReported = true;
         setTimeout(() => {
@@ -83,12 +90,13 @@
           
           window.postMessage({
             __bmz: 'adSlipped',
+            token: SECRET_TOKEN,
             url: location.href,
             signals: {
               adShowing: !!document.querySelector('.html5-video-player.ad-showing'),
               badgeText: badge ? (badge.textContent || '').trim().slice(0, 200) : '',
               whyAdHref: whyLink ? whyLink.href : '',
-              skipButtonPresent: !!document.querySelector(AD_SKIP_SELECTORS),
+              skipButtonPresent: buttons.length > 0,
               videoDuration: video ? video.duration : null
             },
             ts: Date.now()
@@ -98,10 +106,22 @@
       }
 
     } else {
-      // 5. SAFETY NET: If the ad is gone, ensure the real video is at normal speed.
-      if (video.playbackRate !== 1) {
+      // 5. SAFETY NET
+      if (video && video.playbackRate !== 1) {
         try { video.playbackRate = 1; } catch {}
       }
+    }
+  }
+
+  function startSteadyPoll() {
+    if (steadyInterval) clearInterval(steadyInterval);
+    steadyInterval = setInterval(tick, 250);
+  }
+
+  function stopSteadyPoll() {
+    if (steadyInterval) {
+      clearInterval(steadyInterval);
+      steadyInterval = null;
     }
   }
 
@@ -112,10 +132,21 @@
     if (++fastTicks >= 24) clearInterval(fastTimer);
   }, 125);
 
-  // 2. Steady state poll for mid-rolls on long videos
-  setInterval(tick, 250);
+  // 2. Steady state poll (only runs if tab is visible)
+  startSteadyPoll();
 
-  // 3. SPA Navigation Watcher (Catches when you click a new video without reloading)
+  // 3. TAB VISIBILITY OPTIMIZATION
+  document.addEventListener('visibilitychange', () => {
+    isTabVisible = !document.hidden;
+    if (isTabVisible) {
+      tick(); // Immediately check when you switch back to the tab
+      startSteadyPoll();
+    } else {
+      stopSteadyPoll(); // Pause polling in background tabs to save CPU
+    }
+  });
+
+  // 4. SPA Navigation Watcher
   let lastHref = location.href;
   setInterval(() => {
     if (location.href === lastHref) return;
@@ -123,7 +154,7 @@
     
     adReported = false;
 
-    // Re-arm the aggressive fast poll for the new video page
+    // Re-arm fast poll
     let n = 0;
     const t = setInterval(() => {
       tick();
