@@ -42,7 +42,7 @@ Requires Node 18+ at build time only. The runtime has zero dependencies.
 
 ```bash
 npm run validate      # schema + rule checks
-npm run build         # produces dist/chrome-unpacked/, dist/*.zip, and SHA256SUMS
+npm run build         # produces dist/chrome-unpacked/, dist/*.zip, and SHA256SUMS 
 npm run build:chrome  # builds only the Chrome version
 npm run build:firefox # builds only the Firefox version
 Repository Structure
