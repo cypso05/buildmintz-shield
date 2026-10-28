@@ -2,8 +2,8 @@
 
 ## Protected against
 
-- Network requests to **83 known ad domains, 68 tracker domains, and 21
-  confirmed malicious/coercive-redirect domains** — 172 static rules total
+- Network requests to **85 known ad domains, 68 tracker domains, and 21
+  confirmed malicious/coercive-redirect domains** — 171 static rules total
   across three rulesets. These counts are machine-verified against
   `rules/*.json` by `npm run validate`; a mismatch fails the build.
   Filtering is performed by Chrome's `declarativeNetRequest` engine in the

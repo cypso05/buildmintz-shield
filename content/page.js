@@ -1,5 +1,4 @@
 // content/page.js — YouTube ad skipper (main world)
-// Added: Toggle awareness, Anti-Adblock logging, CPU Saving.
 (() => {
   if (!/(^|\.)youtube\.com$/.test(location.hostname)) return;
 
@@ -28,11 +27,9 @@
 
   let adReported = false;
   let hasLoggedBlock = false;
-  let isExtensionEnabled = true; // Default to true until storage says otherwise
+  let isExtensionEnabled = true;
   let steadyInterval = null;
 
-  // 1. CHECK EXTENSION TOGGLE STATE
-  // We need to read chrome.storage directly to know if the user turned it off.
   function checkEnabledState() {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
       chrome.storage.local.get({ enabled: true }, (result) => {
@@ -41,15 +38,86 @@
     }
   }
   
-  // Check immediately, then listen for changes (when user clicks toggle)
   checkEnabledState();
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && changes.enabled) {
         isExtensionEnabled = changes.enabled.newValue;
-        console.log(`[BMZ] Extension toggled: ${isExtensionEnabled ? 'ON' : 'OFF'}`);
       }
     });
+  }
+
+  // 1. Inject CSS to forcibly hide the anti-adblock popup AND its dark background
+  function injectAntiAdblockCSS() {
+    if (document.getElementById('bmz-anti-adblock-css')) return;
+    const style = document.createElement('style');
+    style.id = 'bmz-anti-adblock-css';
+    style.textContent = `
+      ytd-popup-container,
+      tp-yt-paper-dialog,
+      ytd-enforcement-message-view-model,
+      tp-yt-iron-overlay-backdrop {
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+      }
+    `;
+    if (document.documentElement) {
+      document.documentElement.appendChild(style);
+    }
+  }
+  injectAntiAdblockCSS();
+  setInterval(injectAntiAdblockCSS, 1000);
+
+  function checkYouTubeBlock() {
+    let hasViolationText = false;
+    
+    function checkText(node) {
+      if (hasViolationText) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (node.textContent && (
+            node.textContent.includes("Ad blockers violate YouTube's Terms of Service") ||
+            node.textContent.includes("Which of these extensions do you have")
+        )) {
+          hasViolationText = true;
+        }
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node.shadowRoot) checkText(node.shadowRoot);
+        for (let child of node.childNodes) checkText(child);
+      }
+    }
+    
+    if (document.body) checkText(document.body);
+
+    if (hasViolationText) {
+      if (!hasLoggedBlock) {
+        hasLoggedBlock = true;
+        console.warn("[BMZ] Anti-Adblock detected. Destroying popup and forcing play...");
+      }
+
+      // BRUTE FORCE: Rip the popup out of the DOM entirely
+      document.querySelectorAll('ytd-enforcement-message-view-model, tp-yt-paper-dialog, ytd-popup-container, tp-yt-iron-overlay-backdrop').forEach(el => el.remove());
+
+      // FORCE THE VIDEO TO PLAY
+      const video = document.querySelector('video.html5-main-video');
+      if (video && video.paused) {
+        video.play().catch(() => {});
+      }
+
+      // Try clicking any "Allow" button just in case
+      document.querySelectorAll('button, tp-yt-paper-button').forEach(btn => {
+        const text = (btn.innerText || '').toLowerCase();
+        if (text.includes('allow youtube ads') || text === 'allow') {
+            btn.click();
+        }
+      });
+
+      return true;
+    }
+    
+    hasLoggedBlock = false;
+    return false;
   }
 
   function isAdActive() {
@@ -67,56 +135,8 @@
     return false;
   }
 
-  // 2. ANTI-ADBLOCK DETECTION AND LOGGING
-  function checkYouTubeBlock() {
-    let popup = document.querySelector('ytd-enforcement-message-view-model');
-    if (!popup) popup = document.querySelector('tp-yt-paper-dialog');
-    if (!popup) popup = document.querySelector('ytd-popup-container');
-    
-    const bodyText = document.body.innerText || '';
-    const hasViolationText = bodyText.includes("Ad blockers violate YouTube's Terms of Service");
-
-    if ((popup && popup.offsetParent !== null) || hasViolationText) {
-      if (!hasLoggedBlock) {
-        hasLoggedBlock = true;
-        
-        // Log to Browser Console for debugging
-        console.warn("========================================");
-        console.warn("[BMZ] ANTI-ADBLOCK DETECTED BY YOUTUBE");
-        console.warn("Reason:", popup ? "Popup Element Found" : "Text Detected");
-        if (popup) {
-          console.log("DOM Dump of Popup:", popup.outerHTML.substring(0, 1500));
-          const buttons = popup.querySelectorAll('button, tp-yt-paper-button');
-          buttons.forEach((btn, i) => {
-            console.log(`Button ${i}:`, btn.innerText, btn.className);
-          });
-        }
-        console.warn("========================================");
-
-        // Send to background script for the diagnostics page
-        window.postMessage({
-          __bmz: 'adSlipped',
-          token: SECRET_TOKEN,
-          url: location.href,
-          signals: {
-            antiAdblockDetected: true,
-            reason: popup ? "Popup Element Found" : "Text Detected",
-            domSnippet: popup ? popup.outerHTML.substring(0, 500) : "No element, text only."
-          },
-          ts: Date.now()
-        }, '*');
-      }
-      return true;
-    }
-    hasLoggedBlock = false;
-    return false;
-  }
-
   function tick() {
-    // If toggle is OFF, do absolutely nothing.
     if (!isExtensionEnabled) return;
-
-    // If YouTube's anti-adblock is visible, stop skipping so we don't trip it harder.
     if (checkYouTubeBlock()) return;
 
     const video = document.querySelector('video.html5-main-video');
@@ -151,7 +171,7 @@
               videoDuration: video ? video.duration : null
             },
             ts: Date.now()
-          }, '*');
+          }, '*'); // Using '*' is correct here.
           adReported = false;
         }, 1500);
       }
@@ -170,17 +190,14 @@
     if (steadyInterval) { clearInterval(steadyInterval); steadyInterval = null; }
   }
 
-  // Aggressive Fast Poll on Load
   let fastTicks = 0;
   const fastTimer = setInterval(() => {
     tick();
     if (++fastTicks >= 24) clearInterval(fastTimer);
   }, 125);
 
-  // Steady state poll
   startSteadyPoll();
 
-  // Pause when tab is hidden to save CPU
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       tick();
@@ -190,7 +207,6 @@
     }
   });
 
-  // SPA Navigation Watcher
   let lastHref = location.href;
   setInterval(() => {
     if (location.href === lastHref) return;
