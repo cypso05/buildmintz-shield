@@ -28,7 +28,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
+      "matches": ["*://*.youtube.com/*"],
       "js": ["content/page.js"],
       "run_at": "document_start",
       "world": "MAIN",

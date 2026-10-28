@@ -2,9 +2,8 @@
   {"id":9001,"priority":1000,"action":{"type":"allow"},"condition":{"urlFilter":"||static.doubleclick.net/instream/ad_status.js","resourceTypes":["script"]}},
   {"id":9002,"priority":1000,"action":{"type":"allow"},"condition":{"urlFilter":"||googleads.g.doubleclick.net/pagead/","resourceTypes":["xmlhttprequest","script","sub_frame","ping","other"]}},
   {"id":9003,"priority":1000,"action":{"type":"allow"},"condition":{"urlFilter":"||www.youtube.com/pagead/","resourceTypes":["xmlhttprequest","script","sub_frame","ping","other"]}},
-
-  {"id":501,"priority":10,"action":{"type":"block"},"condition":{"urlFilter":"||youtube.com/api/stats/ads","resourceTypes":["xmlhttprequest","ping","other"]}},
-  {"id":503,"priority":10,"action":{"type":"block"},"condition":{"urlFilter":"||youtube.com/ptracking","resourceTypes":["xmlhttprequest","ping","other"]}},
+  {"id":9004,"priority":1000,"action":{"type":"allow"},"condition":{"urlFilter":"||youtube.com/api/stats/ads","resourceTypes":["xmlhttprequest","ping","other"]}},
+  {"id":9005,"priority":1000,"action":{"type":"allow"},"condition":{"urlFilter":"||youtube.com/ptracking","resourceTypes":["xmlhttprequest","ping","other"]}},
 
   {"id":1,"priority":1,"action":{"type":"block"},"condition":{"urlFilter":"||doubleclick.net^","resourceTypes":["script","image","xmlhttprequest","sub_frame","ping","other"]}},
   {"id":2,"priority":1,"action":{"type":"block"},"condition":{"urlFilter":"||googleadservices.com^","resourceTypes":["script","image","xmlhttprequest","sub_frame","ping","other"]}},
