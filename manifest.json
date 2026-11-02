@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "BuildMintZ Shield",
   "short_name": "BMZ Shield",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minimum_chrome_version": "110",
   "description": "Local protection against known ad, tracking, and scam infrastructure.",
   "permissions": [
