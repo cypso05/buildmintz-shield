@@ -10,7 +10,6 @@
     '.ytp-ad-skip-button-container button',
     '.ytp-ad-overlay-close-button',
     '.ytp-ad-survey-close-button',
-    // "Next" on survey / overlay carousel (fallback only; CSS hide is primary)
     '.ytp-ad-survey-next-button',
     '.ytp-ad-overlay-next-button'
   ].join(',');
@@ -29,7 +28,6 @@
     '.ytp-visit-advertiser-link'
   ].join(',');
 
-  // Elements we forcibly hide inline (beats YouTube's !important via inline specificity).
   const OVERLAY_SELECTORS = [
     '.ytp-ad-overlay-container',
     '.ytp-ad-overlay-slot',
@@ -50,15 +48,23 @@
   document.dispatchEvent(new CustomEvent('bmz-handshake', { detail: SECRET_TOKEN }));
 
   let adReported = false;
-  let adSkipIssuedForCurrentAd = false;
   let steadyInterval = null;
 
-  // Enabled flag is written by content.js onto <html data-bmz-enabled>. Safe default = on.
+  // Per-ad seek state.
+  // adSeekAttempts: how many times we've tried currentTime = duration for the current ad.
+  // lastNonAdAt:   timestamp of the most recent tick where no ad was detected.
+  // A pod gap (brief ad -> non-ad -> ad) must not reset these, so we only reset
+  // after 2s of continuous non-ad.
+  let adSeekAttempts = 0;
+  let lastNonAdAt = 0;
+
+  const MAX_SEEK_ATTEMPTS = 40;       // 40 ticks * 250ms = 10s of retrying
+  const AD_POD_GAP_MS = 2000;         // sustained non-ad interval before reset
+
   function isEnabled() {
     return document.documentElement.getAttribute('data-bmz-enabled') !== '0';
   }
 
-  // Only hide the enforcement popup; never hide generic popups/backdrops.
   function ensureAntiAdblockStyle() {
     if (document.getElementById('bmz-anti-adblock-css')) return;
     const style = document.createElement('style');
@@ -81,7 +87,6 @@
     return false;
   }
 
-  // Hide image overlay ads inline. Inline !important wins over external !important.
   function hideOverlayAds() {
     for (const el of document.querySelectorAll(OVERLAY_SELECTORS)) {
       if (el.style.getPropertyValue('display') !== 'none') {
@@ -121,6 +126,20 @@
     }
   }
 
+  // Seek past the current ad. Retries across ticks because:
+  //   - video.duration is briefly NaN/0 right after the ad swap
+  //   - YouTube can silently discard currentTime writes during transitions
+  //   - ad pods reset the player between segments
+  function trySkipAd(video) {
+    if (!video || adSeekAttempts >= MAX_SEEK_ATTEMPTS) return;
+    const dur = video.duration;
+    const cur = video.currentTime;
+    if (!Number.isFinite(dur) || dur <= 0) return;
+    if (!Number.isFinite(cur) || cur >= dur - 0.5) return;
+    adSeekAttempts++;
+    try { video.currentTime = dur; } catch {}
+  }
+
   function tick() {
     if (!isEnabled()) return;
 
@@ -132,16 +151,9 @@
     const video = document.querySelector('video.html5-main-video');
 
     if (ad) {
+      lastNonAdAt = 0;
       clickSkipButtons();
-
-      // Jump past the ad once. Never touch playbackRate or muted — both are
-      // user-controlled and both are detection signals.
-      if (!adSkipIssuedForCurrentAd && video &&
-          Number.isFinite(video.duration) && video.duration > 0 &&
-          video.currentTime < video.duration - 0.5) {
-        adSkipIssuedForCurrentAd = true;
-        try { video.currentTime = video.duration; } catch {}
-      }
+      trySkipAd(video);
 
       if (!adReported) {
         adReported = true;
@@ -166,7 +178,12 @@
         }, 1500);
       }
     } else {
-      adSkipIssuedForCurrentAd = false;
+      // Sustained non-ad only. A single tick of no-ad inside an ad pod must not
+      // reset the seek budget, or the next segment of the pod re-seeks from zero.
+      if (!lastNonAdAt) lastNonAdAt = Date.now();
+      if (Date.now() - lastNonAdAt > AD_POD_GAP_MS) {
+        adSeekAttempts = 0;
+      }
     }
   }
 
@@ -191,7 +208,8 @@
     if (location.href === lastHref) return;
     lastHref = location.href;
     adReported = false;
-    adSkipIssuedForCurrentAd = false;
+    adSeekAttempts = 0;
+    lastNonAdAt = 0;
     let n = 0;
     const t = setInterval(() => { tick(); if (++n >= 24) clearInterval(t); }, 125);
   }, 500);
