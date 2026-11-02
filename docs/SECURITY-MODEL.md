@@ -28,8 +28,11 @@
 - Malicious ads served from a site's own origin, or from a trusted CDN the
   site depends on. These cannot be distinguished from content by network
   rules or by DOM selectors.
-- YouTube pre-roll, mid-roll, or feed ads. Same-origin delivery makes them
-  unblockable by network rules; the player continues to work normally.
+- Same-origin video-player ads. Delivery from the site's own origin makes
+  them unblockable by network rules; where the player exposes a skip
+  control, the content script uses it. Server-stitched ads cannot be
+  skipped by any client-side technique; the player continues to work
+  normally.
 - First-party sponsored posts. Server-rendered content carries no network
   signal an extension can block.
 - **Ads rendered inside iframes.** The content script is declared with

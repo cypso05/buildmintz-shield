@@ -5,15 +5,17 @@ A lightweight, local-only browser extension for blocking requests to known ad, t
 ## What it does
 
 - **Blocks Network Requests:** Blocks requests to ~155 hand-curated ad, tracker, and malicious-domain hosts using native `declarativeNetRequest` rules — no per-request JavaScript, no background CPU cost.
-- **Cosmetic Filtering:** Hides common ad containers via a scoped cosmetic stylesheet plus a `MutationObserver` that catches dynamically inserted ads.
-- **YouTube Ad Skipping:** Runs a lightweight script to instantly detect and skip YouTube pre-rolls, mid-rolls, and static image overlay ads. *Note: Server-side stitched ads (SSAP) cannot be skipped by any extension.*
+- **Cosmetic Filtering:** Hides common ad containers via a scoped cosmetic stylesheet plus a `MutationObserver` that catches dynamically inserted ads, including inline image overlays.
+- **Video ad skipping:** On supported video-player pages, a lightweight content script clicks available skip controls and advances past client-side skippable pre-roll and mid-roll ads. *Note: server-stitched ads delivered inside the same media stream as the content cannot be skipped by any client-side extension; those will play normally.*
+- **Dismisses client-side anti-adblock prompts:** When a supported player displays an "ad blockers are not allowed" message, the extension removes the prompt so the page continues to work.
 - **Global Pause & Allowlist:** Offers a global pause switch and per-site exceptions directly from the popup.
 - **Privacy First:** Does **not** require an account, subscription, telemetry endpoint, or any BuildMintZ-operated backend. All storage is local to your browser.
-- **Ad-Slip Diagnostics:** If a YouTube ad slips through, the extension records the DOM signals it saw. You can view this raw local log in the Settings page to see exactly what YouTube is doing.
+- **Ad-Slip Diagnostics:** When a video ad cannot be skipped within 1.5 seconds, the extension records the DOM signals it observed. This raw local log is viewable in the Settings page.
 
 ## What it does not do
 
-- **No Guarantees against Server-Side Ads:** Ads delivered inside the same media stream as the content (SSAP) cannot be skipped or blocked by client-side extensions. The player is not broken; those specific ads will just play normally.
+- **It is not undetectable:** Sites can always detect client-side page modification. The extension is designed to fail safely — if it encounters a page it cannot handle, the page continues to work normally and ads simply remain visible.
+- **It cannot block server-stitched video ads:** Ads delivered inside the same media stream as the content cannot be skipped or blocked by any client-side extension. The player is not broken; those specific ads will just play normally.
 - **Not an antivirus:** The security rule group is small and hand-authored. Keep your browser's Safe Browsing enabled.
 - **No remote filter lists:** Rules ship with this release. A future updater would need signed or pinned provenance — see `docs/FILTER-SOURCES.md`.
 

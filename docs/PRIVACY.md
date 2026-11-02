@@ -19,7 +19,7 @@ The extension uses Chrome's native `declarativeNetRequest` API to block requests
 - **activeTab:** Required to read the current URL so the popup can display the correct site exception button.
 - **declarativeNetRequest:** Required to block network requests to known ad and tracker domains.
 - **host_permissions (http/https):** Required so the extension can apply network rules and cosmetic filtering across websites.
-- **YouTube Content Scripts:** Required to detect and skip YouTube video ads locally.
+- **Video-player content scripts:** Required to detect and skip skippable video ads and dismiss client-side anti-adblock prompts on supported video sites.
 
 ## Contact
 If you have any questions about this privacy policy, please open an issue on our GitHub repository.
