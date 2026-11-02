@@ -1,18 +1,12 @@
-/* BuildMintZ Shield — cosmetic filtering content script
- *
- * Runs in the ISOLATED world on HTTP(S) pages.
- * Injects CSS to hide ad containers and counts them.
- * Fails silently to avoid interfering with host pages.
- */
-
+/* BuildMintZ Shield — cosmetic filtering content script */
 (() => {
   'use strict';
 
-  // 1. General Ad Selectors + YouTube Specific Selectors
   const SELECTORS = [
-    // General Ad Networks
+    // General ad networks
     'ins.adsbygoogle',
     '[id^="google_ads_"]',
+    '[id^="google_ads_iframe"]',
     '[id^="div-gpt-ad"]',
     '[data-ad-slot]',
     '[data-ad-client]',
@@ -25,30 +19,39 @@
     '[data-testid*="ad-"]',
     '[id*="taboola"]',
     '[id*="outbrain"]',
+    '[class*="ad-overlay"]',
+    '[class*="adOverlay"]',
+    '[class*="image-ad"]',
 
-    // YouTube Visual Ads (Banners, Sidebars, Feed Ads)
+    // YouTube — banners, sidebars, feed ads
     '#player-ads',
     '#masthead-ad',
-    '.ytp-ad-overlay-container',
-    '.ytp-ad-text-overlay',
-    '.ytp-ad-image-overlay',
     'ytd-display-ad-renderer',
     'ytd-promoted-sparkles-web-renderer',
     'ytd-ad-slot-renderer',
     'ytd-in-feed-ad-layout-renderer',
     'ytd-promoted-video-renderer',
-
-    // YouTube 2024–2026 containers
-    '.ytp-ad-player-overlay-layout',
-    '.ytp-ad-module',
-    '.ytp-ad-overlay-slot',
-    '.ytp-suggested-action',
-    'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"]',
     'ytd-banner-promo-renderer',
     'ytd-statement-banner-renderer',
     'ytd-compact-promoted-video-renderer',
+    'ytd-engagement-panel-section-list-renderer[target-id="engagement-panel-ads"]',
     'ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer)',
-    '#player-ads ytd-ad-slot-renderer'
+    '#player-ads ytd-ad-slot-renderer',
+
+    // YouTube — in-player image overlay / survey ads (the "Next" carousel)
+    '.ytp-ad-overlay-container',
+    '.ytp-ad-overlay-slot',
+    '.ytp-ad-image-overlay',
+    '.ytp-ad-text-overlay',
+    '.ytp-ad-survey',
+    '.ytp-ad-survey-container',
+    '.ytp-ad-player-overlay-layout',
+    '.ytp-ad-module',
+    '.ytp-ad-suggested-action',
+    '.ytp-suggested-action',
+    '.ytp-ad-overlay-ad-info-dialog-container',
+    '.ytp-ad-overlay-ad-info-button-container',
+    '.ytp-ad-overlay-close-container'
   ];
 
   const SELECTOR = SELECTORS.join(',');
@@ -66,63 +69,58 @@
   let lastHref = location.href;
   let evaluationId = 0;
 
-  const hostMatches = (host, entry) =>
-    host === entry || host.endsWith(`.${entry}`);
+  // ---- batched cosmetic counting (do not run querySelectorAll per mutation) ----
+  const countQueue = [];
+  let countScheduled = false;
+  function scheduleCountFlush() {
+    if (countScheduled) return;
+    countScheduled = true;
+    const run = () => {
+      countScheduled = false;
+      const batch = countQueue.splice(0, countQueue.length);
+      for (const root of batch) countMatches(root);
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(run, { timeout: 1000 });
+    } else {
+      setTimeout(run, 400);
+    }
+  }
+
+  const hostMatches = (host, entry) => host === entry || host.endsWith(`.${entry}`);
 
   function normalizeHost(value) {
     if (typeof value !== 'string') return null;
     const host = value.trim().toLowerCase().replace(/^www\./, '');
-    if (
-      !host ||
-      host.length > 253 ||
-      !host.includes('.') ||
-      /[/:@*?#\s\\]/.test(host) ||
-      host.startsWith('.') ||
-      host.endsWith('.') ||
-      host.includes('..')
-    ) {
-      return null;
-    }
+    if (!host || host.length > 253 || !host.includes('.') ||
+        /[/:@*?#\s\\]/.test(host) ||
+        host.startsWith('.') || host.endsWith('.') || host.includes('..')) return null;
     return host;
   }
 
   async function readState() {
     try {
       return await new Promise(resolve => {
-        chrome.storage.local.get(
-          { enabled: true, cosmetic: true, allowlist: [] },
-          result => {
-            if (chrome.runtime.lastError) {
-              resolve({ enabled: false, cosmetic: false, allowlist: [] });
-              return;
-            }
-            resolve(result);
-          }
-        );
+        chrome.storage.local.get({ enabled: true, cosmetic: true, allowlist: [] }, result => {
+          if (chrome.runtime.lastError) return resolve({ enabled: false, cosmetic: false, allowlist: [] });
+          resolve(result);
+        });
       });
-    } catch {
-      return { enabled: false, cosmetic: false, allowlist: [] };
-    }
+    } catch { return { enabled: false, cosmetic: false, allowlist: [] }; }
   }
 
   function injectStyle() {
     if (document.getElementById(STYLE_ID)) return;
     const target = document.head || document.documentElement;
     if (!target) return;
-
     const style = document.createElement('style');
     style.id = STYLE_ID;
-    style.textContent = `${SELECTOR} {
-      display: none !important;
-      visibility: hidden !important;
-    }`;
+    style.textContent = `${SELECTOR} { display: none !important; visibility: hidden !important; }`;
     target.appendChild(style);
   }
 
   function removeStyle() {
-    try {
-      document.getElementById(STYLE_ID)?.remove();
-    } catch {}
+    try { document.getElementById(STYLE_ID)?.remove(); } catch {}
   }
 
   function countMatches(root) {
@@ -135,33 +133,23 @@
 
   function scheduleObserve() {
     if (observeTimer || !active) return;
-
     observeTimer = setTimeout(() => {
       observeTimer = null;
       if (!active || observer || !document.documentElement) return;
-
       try {
         observer = new MutationObserver(mutations => {
           if (!active) return;
-
-          // Self-heal: YouTube SPA replaces <head>, taking our style with it.
-          if (!document.getElementById(STYLE_ID)) {
-            injectStyle();
-          }
-
-          for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
+          if (!document.getElementById(STYLE_ID)) injectStyle();  // YouTube SPA can replace <head>
+          for (const m of mutations) {
+            for (const node of m.addedNodes) {
               if (node.nodeType === Node.ELEMENT_NODE) {
-                countMatches(node);
+                countQueue.push(node);
+                scheduleCountFlush();
               }
             }
           }
         });
-
-        observer.observe(document.documentElement, {
-          childList: true,
-          subtree: true
-        });
+        observer.observe(document.documentElement, { childList: true, subtree: true });
       } catch {
         observer?.disconnect();
         observer = null;
@@ -169,41 +157,27 @@
     }, OBSERVE_DEBOUNCE_MS);
   }
 
-   function flush() {
+  function flush() {
     if (pendingCount <= 0) return;
     const count = pendingCount;
     pendingCount = 0;
+    try { chrome.runtime.sendMessage({ type: 'cosmeticHidden', count }).catch(() => {}); } catch {}
+  }
+
+  // Write pause state to a data attribute page.js can read from the MAIN world.
+  function publishEnabled(enabled) {
     try {
-      chrome.runtime.sendMessage({
-        type: 'cosmeticHidden',
-        count
-      });
-    } catch (e) {
-      // Ignore errors if the page is unloading
-    }
+      document.documentElement.setAttribute('data-bmz-enabled', enabled ? '1' : '0');
+    } catch {}
   }
 
   function start() {
-    if (active) {
-      injectStyle();
-      scheduleObserve();
-      return;
-    }
-
+    if (active) { injectStyle(); scheduleObserve(); return; }
     active = true;
     injectStyle();
-
-    try {
-      if (document.documentElement) {
-        countMatches(document.documentElement);
-      }
-    } catch {}
-
+    try { if (document.documentElement) countMatches(document.documentElement); } catch {}
     scheduleObserve();
-
-    if (!flushTimer) {
-      flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
-    }
+    if (!flushTimer) flushTimer = setInterval(flush, FLUSH_INTERVAL_MS);
   }
 
   function stop() {
@@ -219,22 +193,17 @@
   async function evaluate() {
     const currentEvaluation = ++evaluationId;
     const state = await readState();
-
-    // Ignore stale async results if a newer evaluation has started.
     if (currentEvaluation !== evaluationId) return;
+
+    publishEnabled(!!state.enabled);
 
     const host = location.hostname.toLowerCase().replace(/^www\./, '');
     const allowlist = Array.isArray(state.allowlist)
-      ? state.allowlist.map(normalizeHost).filter(Boolean)
-      : [];
-
+      ? state.allowlist.map(normalizeHost).filter(Boolean) : [];
     const exempt = allowlist.some(entry => hostMatches(host, entry));
 
-    if (state.enabled && state.cosmetic && !exempt) {
-      start();
-    } else {
-      stop();
-    }
+    if (state.enabled && state.cosmetic && !exempt) start();
+    else stop();
   }
 
   function checkNavigation() {
@@ -245,9 +214,7 @@
 
   function onStorageChanged(changes, area) {
     if (area !== 'local') return;
-    if (changes.enabled || changes.cosmetic || changes.allowlist) {
-      evaluate().catch(() => {});
-    }
+    if (changes.enabled || changes.cosmetic || changes.allowlist) evaluate().catch(() => {});
   }
 
   function cleanup() {
@@ -262,57 +229,45 @@
 
   try { chrome.storage.onChanged.addListener(onStorageChanged); } catch {}
 
-  // Listen for the extension being reloaded/updated in Chrome
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'forceReevaluate') {
+    if (message?.type === 'forceReevaluate') {
       lastHref = location.href;
       evaluate().catch(() => {});
       sendResponse({ ok: true });
     }
   });
 
-  // 1. Listen for the secure handshake from page.js
+  // Handshake from page.js — keep the existing token-based slip-report channel.
   let bmzSecretToken = null;
-  document.addEventListener('bmz-handshake', (event) => {
-    if (typeof event.detail === 'string') {
-      bmzSecretToken = event.detail;
-    }
+  document.addEventListener('bmz-handshake', event => {
+    if (typeof event.detail === 'string') bmzSecretToken = event.detail;
   });
+  if (!bmzSecretToken) {
+    const datasetToken = document.documentElement.dataset.bmzToken;
+    if (datasetToken) bmzSecretToken = datasetToken;
+  }
 
-  // 2. Relay ad-slip diagnostics, strictly verifying the token
   try {
-    window.addEventListener('message', (event) => {
+    window.addEventListener('message', event => {
       if (event.source !== window) return;
       const data = event.data;
-      
-      // Verify it's our message AND has the correct token
       if (!data || data.__bmz !== 'adSlipped') return;
-      if (!bmzSecretToken || data.token !== bmzSecretToken) return; 
-      
+      if (!bmzSecretToken || data.token !== bmzSecretToken) return;
       if (window.top !== window) return;
-      try {
-        chrome.runtime.sendMessage({ type: 'recordSlippedAd', record: data })
-          .catch(() => {});
-      } catch {}
+      try { chrome.runtime.sendMessage({ type: 'recordSlippedAd', record: data }).catch(() => {}); } catch {}
     });
   } catch {}
 
   try {
     window.addEventListener('pagehide', flush, { capture: true });
-    window.addEventListener('pageshow', () => {
-      lastHref = location.href;
-      evaluate().catch(() => {});
-    });
+    window.addEventListener('pageshow', () => { lastHref = location.href; evaluate().catch(() => {}); });
   } catch {}
 
   navigationTimer = setInterval(checkNavigation, NAVIGATION_CHECK_MS);
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      evaluate().catch(() => {});
-    }, { once: true });
+    document.addEventListener('DOMContentLoaded', () => { evaluate().catch(() => {}); }, { once: true });
   }
-
   evaluate().catch(() => {});
-    window.addEventListener('pagehide', cleanup, { once: true });
+  window.addEventListener('pagehide', cleanup, { once: true });
 })();
