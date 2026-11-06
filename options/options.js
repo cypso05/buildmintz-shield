@@ -421,7 +421,30 @@ function bindSlippedLog() {
       log.textContent = entries
         .slice()
         .reverse()
-        .map(e => JSON.stringify(e, null, 2))
+        .map(e => {
+          const sig = e.signals || {};
+          const kind = sig.kind === 'anomaly' ? '[ANOMALY]' : '[SLIP]';
+          const when = new Date(e.ts || 0).toISOString().replace('T', ' ').slice(0, 19);
+          let host = '';
+          try { host = new URL(e.url).hostname; } catch {}
+
+          let head;
+          if (sig.kind === 'anomaly') {
+            head = sig.anomalies?.join(', ') || 'state change';
+          } else {
+            const bits = [];
+            if (sig.adShowing) bits.push('ad-class');
+            if (sig.badgeText) bits.push(`badge:"${sig.badgeText}"`);
+            if (sig.skipButtonPresent) bits.push('skip-btn');
+            if (sig.longVideo) bits.push('long-video');
+            if (sig.viaStructural) bits.push('structural-only');
+            if (sig.accelerated) bits.push('accelerated');
+            if (sig.seekRejected) bits.push('seek-rejected');
+            head = bits.join(' · ') || 'unknown';
+          }
+
+          return `${kind} ${when}  ${host}\n${head}\n${JSON.stringify(e, null, 2)}`;
+        })
         .join('\n\n');
     } catch (error) {
       console.error('[BMZ options] slipped log load failed', error);

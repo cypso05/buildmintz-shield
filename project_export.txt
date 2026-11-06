@@ -1,6 +1,6 @@
 ﻿========================================
 PROJECT EXPORT
-Generated: 2026-11-04 17:15:26
+Generated: 2026-11-06 09:20:54
 
 Input Paths:
 G:\BuildMintZ-Shield-0.1.0\buildmintz-shield
@@ -371,7 +371,7 @@ init();
 FILE: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield\content\content.js
 FULL PATH: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield\content\content.js
 SIZE: 8.91 KB
-LAST MODIFIED: 11/02/2026 21:09:16
+LAST MODIFIED: 11/06/2026 07:40:37
 ----------------------------------------
 
 /* BuildMintZ Shield — cosmetic filtering content script */
@@ -648,23 +648,23 @@ LAST MODIFIED: 11/02/2026 21:09:16
   window.addEventListener('pagehide', cleanup, { once: true });
 })();
 
+
+
+
+
 ----------------------------------------
 FILE: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield\content\page.js
 FULL PATH: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield\content\page.js
-SIZE: 9.3 KB
-LAST MODIFIED: 11/04/2026 17:07:44
+SIZE: 12.05 KB
+LAST MODIFIED: 11/06/2026 08:08:27
 ----------------------------------------
 
 // content/page.js — YouTube ad skipper (MAIN world)
 (() => {
   'use strict';
   if (!/(^|\.)youtube\.com$/.test(location.hostname)) return;
-  if (window.__bmzAdSkipper) return;           // guard against double injection
-  window.__bmzAdSkipper = true;
 
-  const DEBUG = false;                          // true => log what tick() sees during ads
-  const log = (...a) => { if (DEBUG) console.log('[bmz]', ...a); };
-
+  // ---------------- Selectors (unchanged) ----------------
   const SKIP_SELECTORS = [
     '.ytp-ad-skip-button',
     '.ytp-ad-skip-button-modern',
@@ -690,9 +690,6 @@ LAST MODIFIED: 11/04/2026 17:07:44
     '.ytp-visit-advertiser-link'
   ].join(',');
 
-  // NOTE: '.ytp-ad-player-overlay-layout' is intentionally NOT hidden here.
-  // In the newer ad layout the skip button lives inside it, and hiding it
-  // (display:none) made the skip button look invisible to clickSkipButtons().
   const OVERLAY_SELECTORS = [
     '.ytp-ad-overlay-container',
     '.ytp-ad-overlay-slot',
@@ -702,25 +699,47 @@ LAST MODIFIED: 11/04/2026 17:07:44
     '.ytp-ad-survey-container',
     '.ytp-ad-overlay-ad-info-dialog-container',
     '.ytp-ad-overlay-ad-info-button-container',
-    '.ytp-ad-overlay-close-container'
+    '.ytp-ad-overlay-close-container',
+    '.ytp-ad-player-overlay-layout'
   ].join(',');
 
   const ENFORCEMENT_SELECTOR = 'ytd-enforcement-message-view-model';
+
+  // ---------------- Config ----------------
+  const AD_RATE                = 16;    // long-video fallback only
+  const MAX_SEEK_ATTEMPTS      = 40;    // pre-roll + shorts
+  const SEEK_BUDGET_LONG       = 4;     // ~1s of seek attempts before accel on long mid-rolls
+  const AD_POD_GAP_MS          = 2000;
+  const LONG_VIDEO_THRESHOLD_S = 180;
+  const AD_DURATION_MAX_SEEK_S = 180;
+  const STRUCTURAL_GUARD_MS    = 2000;  // don't trust structural signal for 2s after we accel (prevents ad-end false positive)
 
   const SECRET_TOKEN = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
   document.documentElement.dataset.bmzToken = SECRET_TOKEN;
   document.dispatchEvent(new CustomEvent('bmz-handshake', { detail: SECRET_TOKEN }));
 
-  const MAX_SEEK_ATTEMPTS = 60;   // per individual ad
-  const FAST_RATE = 16;           // max playbackRate browsers reliably accept
+  // ---------------- State ----------------
+  let adReported     = false;
+  let steadyInterval = null;
 
-  let adReported = false;
-  let adKey = '';                 // identifies the current ad (src + duration)
-  let adSeekAttempts = 0;         // seek budget, reset for EVERY new ad in a pod
-  let sped = null;                // saved {muted, rate} while we fast-forward an ad
+  let adSeekAttempts = 0;
+  let lastNonAdAt    = 0;
+  let mainDuration   = 0;
+  let lastNonAdRate  = 1;
+  let weAccelerated  = false;
+  let acceleratedAt  = 0;
+
+  let lastTime       = null;  // previous tick's currentTime
+  let lastDuration   = null;  // previous tick's duration
 
   function isEnabled() {
     return document.documentElement.getAttribute('data-bmz-enabled') !== '0';
+  }
+
+  function isLongVideo(video) {
+    if (mainDuration > LONG_VIDEO_THRESHOLD_S) return true;
+    if (video && Number.isFinite(video.duration) && video.duration > LONG_VIDEO_THRESHOLD_S) return true;
+    return false;
   }
 
   function ensureAntiAdblockStyle() {
@@ -732,25 +751,6 @@ LAST MODIFIED: 11/04/2026 17:07:44
       ytd-popup-container:has(> ytd-enforcement-message-view-model) { display: none !important; }
     `;
     document.documentElement.appendChild(style);
-  }
-
-  function getPlayer() { return document.querySelector('.html5-video-player'); }
-  function getVideo()  { return document.querySelector('video.html5-main-video'); }
-
-  function isAdShowing() {
-    const p = getPlayer();
-    return !!(p && p.classList.contains('ad-showing'));
-  }
-
-  function isAdActive() {
-    const player = getPlayer();
-    if (player && player.classList.contains('ad-showing')) return true;
-    for (const badge of document.querySelectorAll(AD_BADGE_SELECTORS)) {
-      if (badge.offsetParent !== null || badge.getClientRects().length) return true;
-    }
-    if (document.querySelector('.ytp-ad-duration-remaining')) return true;
-    if (player && /(Sponsored|Ad · \d+ of \d+)/i.test(player.textContent || '')) return true;
-    return false;
   }
 
   function hideOverlayAds() {
@@ -779,55 +779,119 @@ LAST MODIFIED: 11/04/2026 17:07:44
       }
       try { node.remove(); } catch {}
     }
-    const video = getVideo();
+    const video = document.querySelector('video.html5-main-video');
     if (video && video.paused) try { video.play().catch(() => {}); } catch {}
     return true;
   }
 
-  // Click regardless of visibility: .click() works on hidden elements, and a
-  // visibility check can wrongly skip a button inside a collapsed container.
   function clickSkipButtons() {
     for (const btn of document.querySelectorAll(SKIP_SELECTORS)) {
       if (btn.disabled) continue;
+      if (btn.offsetParent === null && btn.getClientRects().length === 0) continue;
       try { btn.click(); } catch {}
     }
   }
 
-  // Runs only while the player has .ad-showing, so it can never touch real content.
-  // Strategy: mute + fast-forward immediately (works even if seeks are ignored or
-  // duration is NaN), AND try to seek to the end. Budget resets for every new ad.
-  function skipAd(video) {
+  // ---------------- Detection ----------------
+  // Returns { ad, viaStructural }. `viaStructural` tells the caller the ad was
+  // detected ONLY via the structural signal — this matters because structural
+  // detection on its own should never accelerate a short video.
+  function detectAd(video, longVideo) {
+    const player = document.querySelector('.html5-video-player');
+    if (player && player.classList.contains('ad-showing')) return { ad: true, viaStructural: false };
+
+    for (const badge of document.querySelectorAll(AD_BADGE_SELECTORS)) {
+      if (badge.offsetParent !== null || badge.getClientRects().length) return { ad: true, viaStructural: false };
+    }
+    if (document.querySelector('.ytp-ad-duration-remaining')) return { ad: true, viaStructural: false };
+    if (player && /(Sponsored|Ad · \d+ of \d+)/i.test(player.textContent || '')) return { ad: true, viaStructural: false };
+
+    // Structural signal — ONLY for long videos. Catches mid-rolls where
+    // YouTube never toggles .ad-showing and never changes duration away from
+    // the content timeline (the case that was slipping through).
+    if (longVideo && video && lastTime !== null && lastDuration !== null) {
+      const rewound         = Number.isFinite(video.currentTime) && video.currentTime + 1.5 < lastTime;
+      const durationChanged = Number.isFinite(video.duration) && Math.abs(video.duration - lastDuration) > 1;
+      if (rewound && durationChanged) {
+        // Ignore right after we ourselves accelerated — the ad→content swap
+        // also rewinds + changes duration and would otherwise false-positive.
+        if (Date.now() - acceleratedAt > STRUCTURAL_GUARD_MS) {
+          return { ad: true, viaStructural: true };
+        }
+      }
+    }
+
+    return { ad: false, viaStructural: false };
+  }
+
+  // ---------------- Rate helpers (fallback only) ----------------
+  function accelerateAd(video) {
+    if (!video) return;
+    if (video.playbackRate === AD_RATE) { weAccelerated = true; acceleratedAt = Date.now(); return; }
+    try { video.playbackRate = AD_RATE; } catch {}
+    weAccelerated = true;
+    acceleratedAt = Date.now();
+  }
+
+  function restoreRate(video) {
+    if (!video || !weAccelerated) return;
+    try { video.playbackRate = lastNonAdRate || 1; } catch {}
+    weAccelerated = false;
+  }
+
+  // ---------------- Seek logic ----------------
+  function trySkipAd(video, longVideo, viaStructural) {
     if (!video) return;
 
     const dur = video.duration;
-    const key = (video.currentSrc || '') + '|' + (Number.isFinite(dur) ? dur.toFixed(2) : 'nan');
-    if (key !== adKey) { adKey = key; adSeekAttempts = 0; }
+    const cur = video.currentTime;
+    if (!Number.isFinite(dur) || dur <= 0) return;
+    if (!Number.isFinite(cur) || cur >= dur - 0.5) return;
 
-    if (!sped) sped = { muted: video.muted, rate: video.playbackRate };
-    try { video.muted = true; } catch {}
-    try { if (video.playbackRate !== FAST_RATE) video.playbackRate = FAST_RATE; } catch {}
-    if (video.paused) try { video.play().catch(() => {}); } catch {}
-
-    if (Number.isFinite(dur) && dur > 0 &&
-        Number.isFinite(video.currentTime) && video.currentTime < dur - 0.3 &&
-        adSeekAttempts < MAX_SEEK_ATTEMPTS) {
-      adSeekAttempts++;
-      try { video.currentTime = dur; } catch {}
+    // Pre-roll: no content seen yet. Seek only.
+    if (mainDuration === 0) {
+      if (adSeekAttempts < MAX_SEEK_ATTEMPTS) {
+        adSeekAttempts++;
+        try { video.currentTime = dur; } catch {}
+      }
+      return;
     }
+
+    // Mid-roll with a *provably separate* ad timeline → seek.
+    const looksLikeAdTimeline = dur < mainDuration - 5 && dur <= AD_DURATION_MAX_SEEK_S;
+
+    if (looksLikeAdTimeline) {
+      const budget = longVideo ? SEEK_BUDGET_LONG : MAX_SEEK_ATTEMPTS;
+      if (adSeekAttempts < budget) {
+        adSeekAttempts++;
+        try { video.currentTime = dur; } catch {}
+        return;
+      }
+      if (longVideo) accelerateAd(video);
+      return;
+    }
+
+    // Mid-roll that is NOT a separate timeline (SSAI / duration kept as content).
+    // This is the case that was slipping through — seek can't help here (dur is
+    // the content length, seeking would skip the whole video), so accelerate.
+    if (longVideo) {
+      // If detection was structural-only, accelerate right away — this is the
+      // exact scenario that regressed.
+      if (viaStructural) {
+        accelerateAd(video);
+        return;
+      }
+      // Regular ad signals but no ad timeline → still accelerate after budget.
+      if (adSeekAttempts < SEEK_BUDGET_LONG) {
+        adSeekAttempts++;
+        return;
+      }
+      accelerateAd(video);
+    }
+    // Short videos with no separate ad timeline: do nothing (can't seek safely).
   }
 
-  function restoreAfterAd() {
-    if (!sped) return;
-    const v = getVideo();
-    if (v) {
-      try { v.muted = sped.muted; } catch {}
-      try { v.playbackRate = sped.rate || 1; } catch {}
-    }
-    sped = null;
-    adKey = '';
-    adSeekAttempts = 0;
-  }
-
+  // ---------------- Tick ----------------
   function tick() {
     if (!isEnabled()) return;
 
@@ -835,18 +899,20 @@ LAST MODIFIED: 11/04/2026 17:07:44
     dismissEnforcementPopup();
     hideOverlayAds();
 
-    const ad = isAdActive();
-    const video = getVideo();
+    const video = document.querySelector('video.html5-main-video');
+    const longVideo = isLongVideo(video);
+    const { ad, viaStructural } = detectAd(video, longVideo);
 
     if (ad) {
+      lastNonAdAt = 0;
       clickSkipButtons();
-      if (isAdShowing()) skipAd(video);
-      log('ad', { showing: isAdShowing(), dur: video && video.duration, cur: video && video.currentTime, attempts: adSeekAttempts });
+      trySkipAd(video, longVideo, viaStructural);
 
       if (!adReported) {
         adReported = true;
         setTimeout(() => {
-          if (!isAdActive()) { adReported = false; return; }
+          const v = document.querySelector('video.html5-main-video');
+          if (!detectAd(v, isLongVideo(v)).ad) { adReported = false; return; }
           const badge = document.querySelector(AD_BADGE_SELECTORS);
           try {
             window.postMessage({
@@ -854,10 +920,12 @@ LAST MODIFIED: 11/04/2026 17:07:44
               token: SECRET_TOKEN,
               url: location.href,
               signals: {
-                adShowing: isAdShowing(),
+                adShowing: !!document.querySelector('.html5-video-player.ad-showing'),
                 badgeText: badge ? (badge.textContent || '').trim().slice(0, 200) : '',
                 skipButtonPresent: document.querySelectorAll(SKIP_SELECTORS).length > 0,
-                videoDuration: video ? video.duration : null
+                videoDuration: v ? v.duration : null,
+                longVideo,
+                viaStructural
               },
               ts: Date.now()
             }, '*');
@@ -866,12 +934,30 @@ LAST MODIFIED: 11/04/2026 17:07:44
         }, 1500);
       }
     } else {
-      restoreAfterAd();
+      restoreRate(video);
+
+      if (video && Number.isFinite(video.playbackRate) &&
+          video.playbackRate > 0 && video.playbackRate !== AD_RATE) {
+        lastNonAdRate = video.playbackRate;
+      }
+
+      if (video && Number.isFinite(video.duration) && video.duration > 0) {
+        if (video.duration > mainDuration) mainDuration = video.duration;
+      }
+
+      if (!lastNonAdAt) lastNonAdAt = Date.now();
+      if (Date.now() - lastNonAdAt > AD_POD_GAP_MS) adSeekAttempts = 0;
+    }
+
+    if (video) {
+      lastTime     = Number.isFinite(video.currentTime) ? video.currentTime : null;
+      lastDuration = Number.isFinite(video.duration) ? video.duration : null;
     }
   }
 
-  // --- Triggers: poll (never paused in background tabs) + events + DOM observer ---
-  setInterval(tick, 250);
+  // ---------------- Lifecycle ----------------
+  function startPoll() { if (!steadyInterval) steadyInterval = setInterval(tick, 250); }
+  function stopPoll()  { if (steadyInterval) { clearInterval(steadyInterval); steadyInterval = null; } }
 
   let fastTicks = 0;
   const fastTimer = setInterval(() => {
@@ -879,44 +965,31 @@ LAST MODIFIED: 11/04/2026 17:07:44
     if (++fastTicks >= 24) clearInterval(fastTimer);
   }, 125);
 
-  document.addEventListener('visibilitychange', () => { tick(); });
+  startPoll();
 
-  // Media events don't bubble, but they can be captured at the document.
-  for (const ev of ['loadstart', 'loadedmetadata', 'durationchange', 'playing', 'emptied']) {
-    document.addEventListener(ev, (e) => {
-      if (e.target && e.target.tagName === 'VIDEO') tick();
-    }, true);
-  }
-
-  // React the instant the player flips into/out of ad mode.
-  let observedPlayer = null;
-  const mo = new MutationObserver(() => tick());
-  function attachObserver() {
-    const p = getPlayer();
-    if (p && p !== observedPlayer) {
-      mo.disconnect();
-      observedPlayer = p;
-      mo.observe(p, { attributes: true, attributeFilter: ['class'] });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      const v = document.querySelector('video.html5-main-video');
+      if (!isLongVideo(v)) stopPoll();
+    } else {
+      tick();
+      startPoll();
     }
-  }
-  attachObserver();
-  setInterval(attachObserver, 1000);
-
-  document.addEventListener('yt-navigate-finish', () => {
-    adReported = false;
-    attachObserver();
-    let n = 0;
-    const t = setInterval(() => { tick(); if (++n >= 24) clearInterval(t); }, 125);
   });
 
   let lastHref = location.href;
   setInterval(() => {
     if (location.href === lastHref) return;
     lastHref = location.href;
-    adReported = false;
-    adKey = '';
+    adReported     = false;
     adSeekAttempts = 0;
-    attachObserver();
+    lastNonAdAt    = 0;
+    mainDuration   = 0;
+    lastNonAdRate  = 1;
+    weAccelerated  = false;
+    acceleratedAt  = 0;
+    lastTime       = null;
+    lastDuration   = null;
     let n = 0;
     const t = setInterval(() => { tick(); if (++n >= 24) clearInterval(t); }, 125);
   }, 500);
@@ -4451,6 +4524,7 @@ ROOT: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield
 |   |   |   |-- 0b0a904b04bc26a15e9325f265be2b0296a159 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 27/
 |   |   |   |-- 8c69e15819a0d276e3dca284e8724f088a18e1 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
+|   |   |   |-- f76346ed369e1d286d9ac52bd5c866cedd2c38 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 28/
 |   |   |   |-- 3a32979bb19cb2ff6791a18123005a17f45f5a [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 2d/
@@ -4477,6 +4551,7 @@ ROOT: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield
 |   |   |   |-- 9438079891a18907ebe1c1e25110e470e8222c [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 48/
 |   |   |   |-- 72b870a0a615fcc8794ffc9be57aa0863c4962 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
+|   |   |   |-- 7f05238d69919f7457102dafd9752728ec9181 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 4e/
 |   |   |   |-- 95de7dba01813e48f463063f273d4b887781bc [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 4f/
@@ -4514,6 +4589,7 @@ ROOT: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield
 |   |   |-- 72/
 |   |   |   |-- a0021c90e64c2d669332a0fd9f4c39be0c5ffd [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 74/
+|   |   |   |-- 6d3879002a17ed0a0e962dd4f37380ecae9200 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |   |-- fcd9e9ddaf36132c725edbf4a4378090454d17 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 75/
 |   |   |   |-- 875f2918734bdb6b658093bcc436d672e51ac6 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
@@ -4534,7 +4610,10 @@ ROOT: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield
 |   |   |   |-- d5b53d5eae1d7774a82b4f981e30a0a270fed8 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 82/
 |   |   |   |-- 514ba9715757b95f0ad7e1fb7e6c1e0ad61811 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
+|   |   |-- 83/
+|   |   |   |-- ae2395fa82b4f719ec28e22581c8ef172d0104 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 86/
+|   |   |   |-- 3cbb1bbc6bf1c97d6395bc398a08c3153da5ba [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |   |-- 9121682e4e470051cf27a47890fa4f90f68d71 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- 89/
 |   |   |   |-- 991d72e999c7771fb8dd76abb5d6f518a127cc [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
@@ -4564,6 +4643,7 @@ ROOT: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield
 |   |   |-- a6/
 |   |   |   |-- 4a768bd3fc3a5ceb03114edcb75a8c3da7304a [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- a7/
+|   |   |   |-- 1884d556cc3ec95d647d50cb120e9c27ca5ca6 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |   |-- c734adf5a3c73329e7d4ccf2cbc4478c865234 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
 |   |   |-- ae/
 |   |   |   |-- ca15ab543eb78032541a463f4b1e54c3cc32c1 [CONTENT SKIPPED - EXCLUDED TYPE/FOLDER]
@@ -4760,5 +4840,5 @@ EXPORT COMPLETE
 Files with content exported: 24
 Complete folder structure shown above
 Output file: G:\BuildMintZ-Shield-0.1.0\buildmintz-shield\project_export.txt
-Completed: 2026-11-04 17:15:27
+Completed: 2026-11-06 09:20:55
 ========================================
